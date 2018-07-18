@@ -1,0 +1,64 @@
+---
+# tasks file for osp_admin
+
+# Checking OSP-related Bash environment variables
+- name: Getting current OSP-related Bash env vars (except ${OS_PASSWORD})
+  shell: "env | grep OS_ | egrep -v OS_PASSWORD"
+  register: osp_admin_vars
+  changed_when: false
+- name: Printing current OSP-related Bash env vars (for debugging, if required)
+  debug:
+    var: osp_admin_vars.stdout_lines
+  changed_when: false
+- name: Pausing so you can review these env variables to ensure you want to continue
+  pause:
+    seconds: 10
+  changed_when: false
+- name: Ensuring authentication can occur with current OSP-related Bash env vars
+  os_auth:
+    auth_type: password
+  changed_when: false
+- name: Determining tasks to run based on value of ${OS_IDENTITY_API_VERSION} Bash env var
+  set_fact:
+    keystone_api_version: "{{ lookup('env', 'OS_IDENTITY_API_VERSION') }}"
+  changed_when: false
+
+# Tasks specific to Keystone v2
+- name: Ensure Keystone v2 tasks are performed when version is '2'
+  include_tasks: keystone2.yml
+  when: keystone_api_version == '2'
+
+# Tasks specific to Keystone v3
+- name: Ensure Keystone v3 tasks are performed when version is '3'
+  include_tasks: keystone3.yml
+  when: keystone_api_version == '3'
+  with_items:
+    - "{{ osp_cloud_admin.domains }}"
+  loop_control:
+    loop_var: outer_item
+
+# Tasks common to both Identity API v2 and v3
+- name: Validating "public" network (v2 and v3)
+  os_network:
+    endpoint_type: public
+    project: admin
+    external: true
+    shared: false
+    name: "public"
+    provider_network_type: "{{ osp_cloud_admin.global_public_network.provider_network_type }}"
+    provider_physical_network: "{{ osp_cloud_admin.global_public_network.provider_physical_network }}"
+    provider_segmentation_id: "{{ osp_cloud_admin.global_public_network.provider_segmentation_id }}"
+
+- name: Validating "public" subnet (v2 and v3)
+  os_subnet:
+    endpoint_type: public
+    project: admin
+    name: "public"
+    network_name: "public"
+    cidr: "{{ osp_cloud_admin.global_public_network.cidr }}"
+    dns_nameservers: "{{ osp_cloud_admin.global_public_network.dns_nameservers }}"
+    gateway_ip: "{{ osp_cloud_admin.global_public_network.gateway_ip }}"
+    allocation_pool_start: "{{ osp_cloud_admin.global_public_network.allocation_pool_start }}"
+    allocation_pool_end: "{{ osp_cloud_admin.global_public_network.allocation_pool_end }}"
+
+...

@@ -1,0 +1,29 @@
+---
+
+- name: Validating Keystone roles for default domain
+  os_keystone_role:
+    state: present
+    name: "{{ item }}"
+  with_items:
+    - "{{ osp_cloud_admin.roles }}"
+
+- name: Record current number of projects that the global admin user is part of (before)
+  shell: "openstack role assignment list --user admin --names -f value | wc -l"
+  register: admin_role_assignments_before
+  changed_when: false
+
+- name: Validating that the global admin user is a project admin for each project (v2)
+  shell: "for project_id in $(openstack project list -f value -c ID); do openstack role add --user admin --project $project_id admin; done"
+  changed_when: false
+
+- name: Record current number of projects that the global admin user is part of (after)
+  shell: "openstack role assignment list --user admin --names -f value | wc -l"
+  register: admin_role_assignments_after
+  changed_when: false
+
+- name: Comparing number of role assignments before and after to see if it changed
+  debug:
+    msg: "Before: {{ admin_role_assignments_before.stdout_lines }} and After: {{ admin_role_assignments_after.stdout_lines }}"
+  changed_when: admin_role_assignments_before.stdout_lines != admin_role_assignments_after.stdout_lines
+
+...

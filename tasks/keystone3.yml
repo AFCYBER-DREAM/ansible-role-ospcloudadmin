@@ -1,0 +1,55 @@
+# Keystone v3 supports the creation of domains and groups.
+# It also supports the association of projects and groups with domains.
+- name: Validating OpenStack domain (v3 only)
+  os_keystone_domain:
+    endpoint_type: admin
+    name: "{{ outer_item.name }}"
+    description: "{{ outer_item.description }}"
+
+- name: Ensuring domain has a domain-specific admin role
+  shell: "openstack role create --domain {{ outer_item.name }} admin"
+  register: domain_creation
+  changed_when: domain_creation.rc == '0'
+  failed_when: "'No domain with a name or ID' in domain_creation.stderr"
+
+- name: Recording current number of admin users assigned to domain's admin role (before)
+  shell: "openstack role assignment list --role-domain {{ outer_item.name }} --domain {{ outer_item.name }} --role admin -f value --names | wc -l"
+  register: domain_admins_before
+  changed_when: false
+
+- name: Ensuring each domain's domain admins are assigned the admin role for that domain
+  shell: "openstack role add --user-domain {{ outer_item.name }} --user {{ item.name }} --domain {{ outer_item.name }} --role-domain {{ outer_item.name }} admin"
+  changed_when: false
+  with_items:
+    - "{{ outer_item.admins }}"
+
+- name: Recording current number of admin users assigned to each domain's admin role (after)
+  shell: "openstack role assignment list --role-domain {{ outer_item.name }} --domain {{ outer_item.name }} --role admin -f value --names | wc -l"
+  register: domain_admins_after
+  changed_when: false
+
+- name: Comparing number of domain admins for domain before and after to see if it changed
+  debug:
+    msg: "Before: {{ domain_admins_before.stdout_lines }} and After: {{ domain_admins_after.stdout_lines }}"
+  changed_when: domain_admins_before.stdout_lines != domain_admins_after.stdout_lines
+
+- name: Recording current number of projects that the global admin user is part of globally (before)
+  shell: "openstack role assignment list --user admin --user-domain default --names -f value | wc -l"
+  register: admin_role_assignments_before
+  changed_when: false
+
+- name: Validating that the global admin user is a project admin for each project inside this domain (v3)
+  shell: "for project_id in $(openstack project list -f value -c ID); do openstack role add --user admin --user-domain default --project-domain {{ outer_item.name }} --project $project_id admin; done"
+  changed_when: false
+
+- name: Recording current number of projects that the global admin user is part of globally (after)
+  shell: "openstack role assignment list --user admin --user-domain default --names -f value | wc -l"
+  register: admin_role_assignments_after
+  changed_when: false
+
+- name: Comparing number of role assignments before and after to see if it changed
+  debug:
+    msg: "Before: {{ admin_role_assignments_before.stdout_lines }} and After: {{ admin_role_assignments_after.stdout_lines }}"
+  changed_when: admin_role_assignments_before.stdout_lines != admin_role_assignments_after.stdout_lines
+
+...
